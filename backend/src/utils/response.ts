@@ -1,42 +1,40 @@
 import type { Response } from 'express';
+import type { ApiError, ApiSuccess, PaginationMeta } from '../types/api-response';
 
-export interface PaginationMeta {
-  current_page: number;
-  per_page: number;
-  total: number;
-  last_page: number;
+export function sendSuccess<T>(res: Response, data: T, message: string, status = 200): Response {
+  const body: ApiSuccess<T> = { status: 'success', data, message, errors: null };
+  return res.status(status).json(body);
 }
 
-export const sendSuccess = <T>(
+export function sendPaginated<T>(
   res: Response,
-  data: T,
-  message = 'Berhasil',
-  statusCode = 200,
-  meta?: PaginationMeta
-) => {
-  return res.status(statusCode).json({
-    status: 'success',
-    data,
-    ...(meta ? { meta } : {}),
-    message,
-    errors: null,
-  });
-};
-
-export const sendError = (
-  res: Response,
+  data: T[],
+  meta: PaginationMeta,
   message: string,
-  code: string,
-  statusCode = 400,
-  details?: unknown
-) => {
-  return res.status(statusCode).json({
+): Response {
+  const body: ApiSuccess<T[]> = { status: 'success', data, meta, message, errors: null };
+  return res.status(200).json(body);
+}
+
+export function sendError(res: Response, status: number, code: string, message: string, details?: unknown): Response {
+  const body: ApiError = {
     status: 'error',
     data: null,
     message,
-    errors: {
-      code,
-      ...(details ? { details } : {}),
-    },
-  });
-};
+    errors: details === undefined ? { code } : { code, details },
+  };
+  return res.status(status).json(body);
+}
+
+export function buildMeta(page: number, perPage: number, total: number): PaginationMeta {
+  return {
+    current_page: page,
+    per_page: perPage,
+    total,
+    last_page: Math.max(1, Math.ceil(total / perPage)),
+  };
+}
+
+export function offsetOf(page: number, perPage: number): number {
+  return (page - 1) * perPage;
+}
