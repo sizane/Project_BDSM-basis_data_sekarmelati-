@@ -1,75 +1,37 @@
-import type { Request, Response, NextFunction } from 'express';
-import {
-    getDaftarPesanan,
-    createPesananBaru,
-    getDetailPesanan,
-    catatPembayaranPesanan,
-} from './pesanan.service';
-import type {
-    ListPesananQuery,
-    CreatePesananInput,
-    CreatePembayaranInput,
-} from './pesanan.schema';
-import { sendSuccess, sendError } from '../../utils/response';
-import { ERROR_CODES } from '../../constants/error-codes';
+import type { Request, Response } from 'express';
+import { AppError, ERRORS } from '../../constants/error-codes';
+import { sendPaginated, sendSuccess } from '../../utils/response';
+import type { CatatPembayaranBody, CreatePesananBody, ListPesananQuery } from './pesanan.schema';
+import * as pesananService from './pesanan.service';
 
-export const handleListPesanan = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const query = req.query as unknown as ListPesananQuery;
-        const { items, meta } = await getDaftarPesanan(query);
+function requireUser(req: Request) {
+  if (!req.user) throw new AppError(ERRORS.AUTH_REQUIRED);
+  return req.user;
+}
 
-        const message =
-        items.length === 0 ? 'Belum ada data pesanan.' : 'Daftar pesanan berhasil dimuat';
-        
-        return sendSuccess(res, items, message, 200, meta);
-    } catch (err) {
-        next(err);
-    }
-};
+export async function list(req: Request, res: Response): Promise<void> {
+  const { data, meta } = await pesananService.listPesanan(req.validated.query as ListPesananQuery);
+  sendPaginated(res, data, meta, data.length === 0 ? 'Belum ada data pesanan.' : 'Daftar pesanan berhasil dimuat');
+}
 
-export const handleCreatePesanan = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const payload = req.body as CreatePesananInput;
-    const result = await createPesananBaru(payload, req.user!.admin_id, req.clientIp);
+export async function detail(req: Request, res: Response): Promise<void> {
+  const data = await pesananService.getPesananDetail(req.validated.params.id as string);
+  sendSuccess(res, data, 'Detail pesanan berhasil dimuat');
+}
 
-    if (result.error) {
-      return sendError(res, result.error.message, result.error.code, result.error.status);
-    }
+export async function create(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const data = await pesananService.createPesanan(req.validated.body as CreatePesananBody, user.adminId, req.clientIp);
+  sendSuccess(res, data, 'Pesanan berhasil dibuat', 201);
+}
 
-    return sendSuccess(res, result.data, 'Pesanan berhasil dibuat', 201);
-  } catch (err) {
-    next(err);
-  }
-};
-
-export const handleGetDetailPesanan = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const id = req.params.id as string;
-        const detail = await getDetailPesanan(id);
-        
-        if (!detail) {
-            return sendError(res, 'Data pesanan tidak ditemukan', ERROR_CODES.NOT_FOUND, 404);
-        }
-        
-        return sendSuccess(res, detail, 'Detail pesanan berhasil dimuat', 200);
-    } catch (err) {
-        next(err);
-    }
-};
-
-export const handleCreatePembayaran = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const id = req.params.id as string;
-        const payload = req.body as CreatePembayaranInput;
-
-        const result = await catatPembayaranPesanan(id, req.user!.admin_id, payload, req.clientIp);
-        
-        if (result.error) {
-            return sendError(res, result.error.message, result.error.code, result.error.status);
-        }
-        
-        return sendSuccess(res, result.data, 'Pembayaran berhasil dicatat', 200);
-    } catch (err) {
-        next(err);
-    }
-};
+export async function catatPembayaran(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const data = await pesananService.catatPembayaran(
+    req.validated.params.id as string,
+    req.validated.body as CatatPembayaranBody,
+    user.adminId,
+    req.clientIp,
+  );
+  sendSuccess(res, data, 'Pembayaran berhasil dicatat');
+}

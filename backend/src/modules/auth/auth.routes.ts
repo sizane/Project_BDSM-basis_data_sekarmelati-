@@ -1,13 +1,15 @@
-// --- backend/src/modules/auth/auth.routes.ts ---
 import { Router } from 'express';
-import { handleLogin, handleLogout } from './auth.controller';
-import { validate } from '../../middlewares/validate';
 import { authenticate } from '../../middlewares/authenticate';
-import { loginSchema } from './auth.schema';
+import { validate } from '../../middlewares/validate';
+import * as controller from './auth.controller';
+import { loginBody } from './auth.schema';
 
 const router = Router();
 
-router.post('/login', validate(loginSchema), handleLogin);
-router.post('/logout', authenticate, handleLogout);
+// Public (AC-04: satu-satunya endpoint tanpa JWT)
+router.post('/login', validate({ body: loginBody }), controller.login);
+
+// JWT wajib
+router.post('/logout', authenticate, controller.logout);
 
 export default router;

@@ -1,112 +1,142 @@
-import { poolPromise, sql } from '../../config/database';
-import { comparePassword } from '../../utils/password';
+import { p, runProc, runQuery, sql } from '../../config/database';
+import { AppError, ERRORS } from '../../constants/error-codes';
+import type { Role } from '../../constants/roles';
 import { signToken } from '../../utils/jwt';
-import { ERROR_CODES } from '../../constants/error-codes';
+import { compareAgainstDummy, comparePassword } from '../../utils/password';
+import type { AuthUser } from '../../types/express';
+import { tulisAuditLog } from '../audit-log/audit.service';
 
-export const loginUser = async (username: string, password: string, ipAddress: string) => {
-  const pool = await poolPromise;
+interface LoginRow {
+  admin_id: string;
+  username: string;
+  password_hash: string;
+  full_name: string;
+  role: Role;
+  is_active: boolean;
+  is_locked: number;
+}
 
-  const userResult = await pool
-    .request()
-    .input('username', sql.VarChar(50), username)
-    .query(`
-      SELECT admin_id, username, password_hash, full_name, role, is_active, failed_login_count, locked_until
-      FROM admins
-      WHERE username = @username
-    `);
+const LOCK_CHECK_SQL = `CASE WHEN locked_until IS NOT NULL AND locked_until > SYSUTCDATETIME() THEN 1 ELSE 0 END`;
 
-  const admin = userResult.recordset[0];
+export interface LoginResult {
+  token: string;
+  expires_in: number;
+  admin: { id: string; full_name: string; username: string; role: Role };
+}
 
-  // Jika user tidak ditemukan, catat ke audit log tanpa membocorkan eksistensi akun
-  if (!admin || !admin.is_active) {
-    await pool
-      .request()
-      .input('admin_id', sql.UniqueIdentifier, null)
-      .input('admin_username', sql.VarChar(50), username)
-      .input('action_type', sql.VarChar(50), 'LOGIN_FAILED')
-      .input('resource_type', sql.VarChar(50), 'Autentikasi')
-      .input('new_values', sql.NVarChar(sql.MAX), JSON.stringify({ reason: 'User not found or inactive' }))
-      .input('ip_address', sql.VarChar(45), ipAddress)
-      .execute('sp_tulis_audit_log');
+async function isLocked(adminId: string): Promise<boolean> {
+  const r = await runQuery<{ is_locked: number }>(
+    `SELECT ${LOCK_CHECK_SQL} AS is_locked FROM dbo.admins WHERE admin_id = @admin_id`,
+    [p.uuid('admin_id', adminId)],
+  );
+  return r.recordset[0]?.is_locked === 1;
+}
 
-    return { error: { code: ERROR_CODES.AUTH_INVALID_CREDENTIALS, message: 'Username atau password tidak valid', status: 401 } };
+/**
+ * FSD-2.1 Login.
+ * - Verifikasi bcrypt dilakukan di sini; penghitung gagal & lockout 15 menit (3x gagal)
+ *   dikelola sp_catat_percobaan_login. Trigger trg_audit_login mencatat hasilnya ke audit log.
+ * - Akun yang masih terkunci ditolak SEBELUM memanggil SP agar masa kunci tidak diperpanjang.
+ * - Pesan gagal selalu generik (ERR-AUTH-02), tidak membedakan username salah / password salah / akun nonaktif.
+ */
+export async function login(username: string, password: string, ip: string): Promise<LoginResult> {
+  const found = await runQuery<LoginRow>(
+    `SELECT admin_id, username, password_hash, full_name, role, is_active, ${LOCK_CHECK_SQL} AS is_locked
+       FROM dbo.admins
+      WHERE username = @username`,
+    [p.varchar('username', username, 50)],
+  );
+  const admin = found.recordset[0];
+
+  if (!admin) {
+    // Username tidak dikenal: tidak ada baris admins untuk di-UPDATE, jadi dicatat langsung.
+    await compareAgainstDummy(password);
+    await tulisAuditLog({
+      adminId: null,
+      adminUsername: username,
+      actionType: 'LOGIN_FAILED',
+      resourceType: 'Autentikasi',
+      newValues: { reason: 'username_tidak_dikenal' },
+      ipAddress: ip,
+    });
+    throw new AppError(ERRORS.AUTH_INVALID);
   }
 
-  // Cek apakah akun masih dalam masa lockout 15 menit (TSD 5.1)
-  if (admin.locked_until && new Date(admin.locked_until) > new Date()) {
-    return {
-      error: {
-        code: ERROR_CODES.AUTH_LOCKED,
-        message: 'Akun dikunci sementara. Coba lagi dalam 15 menit.',
-        status: 403,
-      },
-    };
+  if (admin.is_locked === 1) {
+    await tulisAuditLog({
+      adminId: admin.admin_id,
+      adminUsername: admin.username,
+      actionType: 'LOGIN_FAILED',
+      resourceType: 'Autentikasi',
+      newValues: { reason: 'akun_terkunci' },
+      ipAddress: ip,
+    });
+    throw new AppError(ERRORS.LOCKED);
   }
 
-  const isPasswordMatch = await comparePassword(password, admin.password_hash);
+  const passwordMatches = await comparePassword(password, admin.password_hash);
 
-  // Panggil SP untuk update counter / reset lockout & memicu trg_audit_login
-  await pool
-    .request()
-    .input('username', sql.VarChar(50), username)
-    .input('success', sql.Bit, isPasswordMatch ? 1 : 0)
-    .input('ip_address', sql.VarChar(45), ipAddress)
-    .execute('sp_catat_percobaan_login');
-
-  if (!isPasswordMatch) {
-    // Cek ulang apakah percobaan ini baru saja memicu lockout ke-3
-    const updatedUser = await pool
-      .request()
-      .input('username', sql.VarChar(50), username)
-      .query('SELECT locked_until FROM admins WHERE username = @username');
-
-    if (updatedUser.recordset[0]?.locked_until && new Date(updatedUser.recordset[0].locked_until) > new Date()) {
-      return {
-        error: {
-          code: ERROR_CODES.AUTH_LOCKED,
-          message: 'Akun dikunci sementara. Coba lagi dalam 15 menit.',
-          status: 403,
-        },
-      };
+  if (!passwordMatches || !admin.is_active) {
+    if (admin.is_active) {
+      await runProc('sp_catat_percobaan_login', [
+        p.varchar('username', admin.username, 50),
+        p.bit('success', false),
+        p.varchar('ip_address', ip, 45),
+      ]);
+      if (await isLocked(admin.admin_id)) throw new AppError(ERRORS.LOCKED);
+    } else {
+      await tulisAuditLog({
+        adminId: admin.admin_id,
+        adminUsername: admin.username,
+        actionType: 'LOGIN_FAILED',
+        resourceType: 'Autentikasi',
+        newValues: { reason: 'akun_nonaktif' },
+        ipAddress: ip,
+      });
     }
-
-    return { error: { code: ERROR_CODES.AUTH_INVALID_CREDENTIALS, message: 'Username atau password tidak valid', status: 401 } };
+    throw new AppError(ERRORS.AUTH_INVALID);
   }
 
-  const tokenData = signToken({
-    admin_id: admin.admin_id,
-    username: admin.username,
-    role: admin.role,
-  });
+  await runProc('sp_catat_percobaan_login', [
+    p.varchar('username', admin.username, 50),
+    p.bit('success', true),
+    p.varchar('ip_address', ip, 45),
+  ]);
 
+  const { token, expiresIn } = signToken({ adminId: admin.admin_id, role: admin.role, username: admin.username });
   return {
-    data: {
-      ...tokenData,
-      admin: {
-        id: admin.admin_id,
-        full_name: admin.full_name,
-        username: admin.username,
-        role: admin.role,
-      },
-    },
+    token,
+    expires_in: expiresIn,
+    admin: { id: admin.admin_id, full_name: admin.full_name, username: admin.username, role: admin.role },
   };
-};
+}
 
-export const logoutUser = async (adminId: string, username: string, jti: string, expUnix: number, ipAddress: string) => {
-  const pool = await poolPromise;
+/**
+ * Logout: jti token dicatat ke revoked_tokens (dicek authenticate sampai token kedaluwarsa)
+ * dan LOGOUT ditulis ke audit log. Token yang sudah lewat masa berlakunya dibersihkan sekalian.
+ */
+export async function logout(user: AuthUser, ip: string): Promise<void> {
+  await runQuery(
+    `BEGIN TRY
+       IF NOT EXISTS (SELECT 1 FROM dbo.revoked_tokens WHERE jti = @jti)
+         INSERT INTO dbo.revoked_tokens (jti, admin_id, expires_at) VALUES (@jti, @admin_id, @expires_at);
+     END TRY
+     BEGIN CATCH
+       IF ERROR_NUMBER() NOT IN (2627, 2601) THROW;  -- logout ganda bersamaan: abaikan duplikat
+     END CATCH;
+     DELETE FROM dbo.revoked_tokens WHERE expires_at < SYSUTCDATETIME();`,
+    [
+      p.varchar('jti', user.jti, 64),
+      p.uuid('admin_id', user.adminId),
+      { name: 'expires_at', type: sql.DateTime2(7), value: new Date(user.exp * 1000) },
+    ],
+  );
 
-  await pool
-    .request()
-    .input('jti', sql.VarChar(100), jti)
-    .input('expires_at', sql.DateTime2, new Date(expUnix * 1000))
-    .query('INSERT INTO revoked_tokens (jti, expires_at) VALUES (@jti, @expires_at)');
-
-  await pool
-    .request()
-    .input('admin_id', sql.UniqueIdentifier, adminId)
-    .input('admin_username', sql.VarChar(50), username)
-    .input('action_type', sql.VarChar(50), 'LOGOUT')
-    .input('resource_type', sql.VarChar(50), 'Autentikasi')
-    .input('ip_address', sql.VarChar(45), ipAddress)
-    .execute('sp_tulis_audit_log');
-};
+  await tulisAuditLog({
+    adminId: user.adminId,
+    adminUsername: user.username,
+    actionType: 'LOGOUT',
+    resourceType: 'Autentikasi',
+    ipAddress: ip,
+  });
+}

@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import { authenticate } from '../middlewares/authenticate';
 import adminRoutes from '../modules/admin/admin.routes';
-import auditRoutes from '../modules/audit-log/audit.routes';
 import authRoutes from '../modules/auth/auth.routes';
-import dashboardRoutes from '../modules/dashboard/dashboard.routes';
-import laporanRoutes from '../modules/laporan/laporan.routes';
-import pengeluaranRoutes from '../modules/pengeluaran/pengeluaran.routes';
 import pesananRoutes from '../modules/pesanan/pesanan.routes';
-import piutangRoutes from '../modules/piutang/piutang.routes';
-import transaksiRoutes from '../modules/transaksi/transaksi.routes';
+// import auditRoutes from '../modules/audit-log/audit.routes';
+// import dashboardRoutes from '../modules/dashboard/dashboard.routes';
+// import laporanRoutes from '../modules/laporan/laporan.routes';
+// import pengeluaranRoutes from '../modules/pengeluaran/pengeluaran.routes';
+// import piutangRoutes from '../modules/piutang/piutang.routes';
+// import transaksiRoutes from '../modules/transaksi/transaksi.routes';
 
 /**
  * Seluruh endpoint di bawah /api/v1.
@@ -21,13 +21,13 @@ const router = Router();
 router.use('/auth', authRoutes);
 
 router.use('/admins', authenticate, adminRoutes);
-router.use('/dashboard', authenticate, dashboardRoutes);
 router.use('/pesanan', authenticate, pesananRoutes);
-router.use('/piutang', authenticate, piutangRoutes);
-router.use('/riwayat-transaksi', authenticate, transaksiRoutes);
-router.use('/pengeluaran', authenticate, pengeluaranRoutes);
-router.use('/laporan', authenticate, laporanRoutes);
-// TSD 3.2 menulis /admin/audit-logs, TSD 3.3 menulis /audit-logs: keduanya dilayani.
-router.use(['/audit-logs', '/admin/audit-logs'], authenticate, auditRoutes);
+// router.use('/dashboard', authenticate, dashboardRoutes);
+// router.use('/piutang', authenticate, piutangRoutes);
+// router.use('/riwayat-transaksi', authenticate, transaksiRoutes);
+// router.use('/pengeluaran', authenticate, pengeluaranRoutes);
+// router.use('/laporan', authenticate, laporanRoutes);
+// TSD 3.2 menulis /admin/audit-logs, TSD 3.3 menulis /audit-logs: keduanya masuk.
+// router.use(['/audit-logs', '/admin/audit-logs'], authenticate, auditRoutes);
 
 export default router;
