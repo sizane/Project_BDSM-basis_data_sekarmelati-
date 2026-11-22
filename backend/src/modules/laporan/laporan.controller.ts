@@ -12,7 +12,7 @@ export async function labaRugi(req: Request, res: Response): Promise<void> {
   sendSuccess(
     res,
     data,
-    ada_transaksi ? 'Laporan laba/rugi berhasil dimuat' : 'Belum ada transaksi recorded pada bulan ini',
+    ada_transaksi ? 'Laporan laba/rugi berhasil dimuat' : 'Belum ada transaksi tercatat pada bulan ini',
   );
 }
 

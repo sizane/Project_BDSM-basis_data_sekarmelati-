@@ -107,7 +107,7 @@ export function generateLevelUtangPdf(rows: LevelUtangItem[], printedBy: string,
       const y = doc.y;
       doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9);
       columns.forEach((col, i) => {
-        doc.text(cells[i], x + 2, y, { width: col.width - 6, align: col.align, lineBreak: false, ellipsis: true });
+        doc.text(cells[i] ?? '', x + 2, y, { width: col.width - 6, align: col.align, lineBreak: false, ellipsis: true });
         x += col.width;
       });
       doc.y = y + 16;
