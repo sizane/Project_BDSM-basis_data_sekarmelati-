@@ -56,7 +56,7 @@ const poolConfig: sql.config = {
   password: env.DB_PASSWORD,
   options: {
     encrypt: env.DB_ENCRYPT,
-    trustServerCertificate: process.env.DB_TRUST_SERVER_CERT === 'true',
+    trustServerCertificate: env.DB_TRUST_SERVER_CERT,
     enableArithAbort: true,
   },
   pool: { max: 10, min: 0, idleTimeoutMillis: 30_000 },

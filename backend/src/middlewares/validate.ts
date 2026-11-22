@@ -136,8 +136,8 @@ export const validate =
       }
     }
 
-    if (failures.length > 0) {
-      const first = failures[0];
+    const first = failures[0];
+    if (first) {
       return next(
         new AppError(
           { code: first.code, message: first.message, status: 422 },
