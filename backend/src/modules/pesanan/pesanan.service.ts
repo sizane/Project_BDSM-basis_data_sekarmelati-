@@ -160,6 +160,7 @@ interface CatatPesananRow {
 
 export async function createPesanan(body: CreatePesananBody, adminId: string, ip: string) {
   const item = body.items[0];
+  if (!item) throw new AppError(ERRORS.VAL_REQUIRED); // dijamin 1 item oleh schema (.length(1))
   const total = item.kuantitas * item.harga_per_item;
 
   // Pra-validasi cepat; SP tetap memvalidasi ulang sebagai pagar terakhir di database.
