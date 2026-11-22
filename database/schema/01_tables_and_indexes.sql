@@ -20,6 +20,7 @@ CREATE TABLE admins (
 -- 2. Tabel revoked_tokens (TSD 3.3b & TSD 6.2)
 CREATE TABLE revoked_tokens (
     jti VARCHAR(100) NOT NULL CONSTRAINT PK_revoked_tokens PRIMARY KEY,
+    admin_id UNIQUEIDENTIFIER NULL CONSTRAINT FK_revoked_tokens_admin FOREIGN KEY REFERENCES admins(admin_id) ON DELETE SET NULL,
     expires_at DATETIME2 NOT NULL,
     revoked_at DATETIME2 NOT NULL CONSTRAINT DF_revoked_tokens_revoked_at DEFAULT SYSUTCDATETIME()
 );
@@ -109,4 +110,5 @@ CREATE INDEX IX_pesanan_status_pesanan ON pesanan(status_pesanan);
 CREATE INDEX IX_pembayaran_pesanan_id ON pembayaran(pesanan_id);
 CREATE INDEX IX_audit_logs_admin_id ON audit_logs(admin_id);
 CREATE INDEX IX_audit_logs_created_at ON audit_logs(created_at DESC);
+CREATE INDEX IX_revoked_tokens_expires_at ON revoked_tokens(expires_at);
 GO
