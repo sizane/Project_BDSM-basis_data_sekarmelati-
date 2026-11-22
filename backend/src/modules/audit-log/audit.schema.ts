@@ -32,7 +32,7 @@ const rentangTanggal = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: RENTANG_MESSAGE, params: { code: ERRORS.VAL_DATE_RANGE.code } });
       return z.NEVER;
     }
-    return { awal, akhir };
+    return { ...(awal !== undefined && { awal }), ...(akhir !== undefined && { akhir }) };
   });
 
 export const listAuditLogsQuery = z.object({
