@@ -11,30 +11,8 @@ import routes from './routes';
 
 const app = express();
 
-<<<<<<< Updated upstream
 app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 app.use(express.json());
-=======
-app.set('trust proxy', env.TRUST_PROXY); // IP klien benar di belakang Nginx
-app.disable('x-powered-by');
-
-// Swagger UI memakai skrip inline, jadi dipasang sebelum helmet (CSP).
-if (env.ENABLE_SWAGGER) {
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-}
-
-app.use(helmet());
-app.use(
-  cors({
-    origin: env.CORS_ORIGIN,
-    credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type'],
-    exposedHeaders: ['Content-Disposition'],
-  }),
-);
-app.use(express.json({ limit: '100kb' }));
->>>>>>> Stashed changes
 app.use(cookieParser());
 app.use(sessionContext);
 
