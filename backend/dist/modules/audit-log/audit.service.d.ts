@@ -1,6 +1,20 @@
 import type { Request } from 'express';
 import type { PaginationMeta } from '../../types/api-response';
 import type { ListAuditLogsQuery } from './audit.schema';
+import type { SessionContext } from '../../middlewares/session-context';
+/**
+ * AuditService: Kelas service audit untuk relasi AGREGASI dan ASOSIASI.
+ * - AGREGASI: Di-inject ke dalam PesananService dan PengeluaranService.
+ * - ASOSIASI: Menerima instance SessionContext sebagai parameter method.
+ */
+export declare class AuditService {
+    catat(aksi: string, tabelTerkait: string, recordId: string | null, deskripsi: string, session: SessionContext): Promise<void>;
+    list(query: ListAuditLogsQuery): Promise<{
+        data: unknown[];
+        meta: PaginationMeta;
+    }>;
+}
+export declare const auditServiceInstance: AuditService;
 export interface AuditEntry {
     adminId: string | null;
     adminUsername: string;

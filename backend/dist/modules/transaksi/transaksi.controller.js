@@ -1,19 +1,18 @@
 import { sendPaginated } from '../../utils/response';
-import * as transaksiService from './transaksi.service';
-import { TransaksiService } from '../../core/services/TransaksiService';
+import { TransaksiService, transaksiService as defaultTransaksiService } from './transaksi.service';
 /**
  * TransaksiController: Controller berbasis OOP untuk modul Transaksi.
  * Memenuhi kriteria:
- * - AGREGASI: Meng-agregasikan TransaksiService.
+ * - AGREGASI: Meng-agregasikan TransaksiService via konstruktor.
  * - ASYNC: Asynchronous handler.
  */
 export class TransaksiController {
-    transaksiService;
+    service;
     constructor(service) {
-        this.transaksiService = service ?? new TransaksiService();
+        this.service = service ?? defaultTransaksiService;
     }
     list = async (req, res) => {
-        const { data, meta } = await transaksiService.listRiwayatTransaksi(req.validated.query);
+        const { data, meta } = await this.service.listRiwayatTransaksi(req.validated.query);
         sendPaginated(res, data, meta, data.length === 0 ? 'Data riwayat transaksi tidak ditemukan' : 'Riwayat transaksi berhasil dimuat');
     };
 }

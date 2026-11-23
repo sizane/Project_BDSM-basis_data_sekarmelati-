@@ -6,6 +6,38 @@ import { buildMeta, offsetOf } from '../../utils/response';
 import { logger } from '../../utils/logger';
 import type { PaginationMeta } from '../../types/api-response';
 import type { JenisTindakan, ListAuditLogsQuery } from './audit.schema';
+import type { SessionContext } from '../../middlewares/session-context';
+
+/**
+ * AuditService: Kelas service audit untuk relasi AGREGASI dan ASOSIASI.
+ * - AGREGASI: Di-inject ke dalam PesananService dan PengeluaranService.
+ * - ASOSIASI: Menerima instance SessionContext sebagai parameter method.
+ */
+export class AuditService {
+  public async catat(
+    aksi: string,
+    tabelTerkait: string,
+    recordId: string | null,
+    deskripsi: string,
+    session: SessionContext,
+  ): Promise<void> {
+    await tulisAuditLog({
+      adminId: session.adminId,
+      adminUsername: session.adminUsername ?? 'unknown',
+      actionType: aksi,
+      resourceType: tabelTerkait,
+      resourceId: recordId,
+      newValues: { deskripsi },
+      ipAddress: session.ipAddress,
+    });
+  }
+
+  public async list(query: ListAuditLogsQuery): Promise<{ data: unknown[]; meta: PaginationMeta }> {
+    return await listAuditLogs(query);
+  }
+}
+
+export const auditServiceInstance = new AuditService();
 
 export interface AuditEntry {
   adminId: string | null;

@@ -4,6 +4,28 @@ import { wibDayStart, wibNextDayStart } from '../../utils/date';
 import { buildMeta, offsetOf } from '../../utils/response';
 import { logger } from '../../utils/logger';
 /**
+ * AuditService: Kelas service audit untuk relasi AGREGASI dan ASOSIASI.
+ * - AGREGASI: Di-inject ke dalam PesananService dan PengeluaranService.
+ * - ASOSIASI: Menerima instance SessionContext sebagai parameter method.
+ */
+export class AuditService {
+    async catat(aksi, tabelTerkait, recordId, deskripsi, session) {
+        await tulisAuditLog({
+            adminId: session.adminId,
+            adminUsername: session.adminUsername ?? 'unknown',
+            actionType: aksi,
+            resourceType: tabelTerkait,
+            resourceId: recordId,
+            newValues: { deskripsi },
+            ipAddress: session.ipAddress,
+        });
+    }
+    async list(query) {
+        return await listAuditLogs(query);
+    }
+}
+export const auditServiceInstance = new AuditService();
+/**
  * Mencatat kejadian yang tidak dipicu trigger (LOGIN_*, LOGOUT, ACCESS_DENIED, perubahan akun admin)
  * lewat sp_tulis_audit_log. Gagal menulis log TIDAK boleh membatalkan proses utama (BR-29):
  * error dicatat ke log server dan fungsi tetap selesai tanpa melempar.

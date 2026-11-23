@@ -2,22 +2,22 @@ import type { Request, Response } from 'express';
 import { AppError, ERRORS } from '../../constants/error-codes';
 import { sendPaginated, sendSuccess } from '../../utils/response';
 import type { CatatPembayaranBody, CreatePesananBody, ListPesananQuery } from './pesanan.schema';
-import { PesananCoreService } from '../../core/services/PesananCoreService';
-import { SessionContext } from '../../core/domain/SessionContext';
+import { PesananService, pesananService as defaultPesananService } from './pesanan.service';
+import { SessionContext } from '../../middlewares/session-context';
 
 /**
  * PesananController: Controller berbasis OOP untuk modul Pesanan.
  * Memenuhi kriteria:
- * - AGREGASI: Meng-agregasikan PesananCoreService via konstruktor / dependency injection.
+ * - AGREGASI: Meng-agregasikan PesananService via konstruktor / dependency injection.
  * - ASOSIASI: Mengonversi request Express menjadi SessionContext dan meneruskannya ke Service.
  * - ASYNC: Seluruh handler request bersifat asynchronous.
  */
 export class PesananController {
-  // --- AGREGASI: Menyimpan referensi ke instance PesananCoreService ---
-  private readonly pesananService: PesananCoreService;
+  // --- AGREGASI: Menyimpan referensi ke instance PesananService ---
+  private readonly service: PesananService;
 
-  constructor(service?: PesananCoreService) {
-    this.pesananService = service ?? PesananCoreService.getInstance();
+  constructor(service?: PesananService) {
+    this.service = service ?? defaultPesananService;
   }
 
   // --- ASOSIASI: Membangun SessionContext dari objek Request Express ---
@@ -28,24 +28,24 @@ export class PesananController {
 
   public list = async (req: Request, res: Response): Promise<void> => {
     // Memanggil method overload cariPesanan() dengan parameter query
-    const { data, meta } = await this.pesananService.cariPesanan(req.validated.query as ListPesananQuery);
+    const { data, meta } = await this.service.cariPesanan(req.validated.query as ListPesananQuery);
     sendPaginated(res, data, meta, data.length === 0 ? 'Belum ada data pesanan.' : 'Daftar pesanan berhasil dimuat');
   };
 
   public detail = async (req: Request, res: Response): Promise<void> => {
-    const data = await this.pesananService.getPesananDetail(req.validated.params.id as string);
+    const data = await this.service.getPesananDetail(req.validated.params.id as string);
     sendSuccess(res, data, 'Detail pesanan berhasil dimuat');
   };
 
   public create = async (req: Request, res: Response): Promise<void> => {
     const session = this.extractSession(req);
-    const data = await this.pesananService.createPesanan(req.validated.body as CreatePesananBody, session);
+    const data = await this.service.createPesanan(req.validated.body as CreatePesananBody, session);
     sendSuccess(res, data, 'Pesanan berhasil dibuat', 201);
   };
 
   public catatPembayaran = async (req: Request, res: Response): Promise<void> => {
     const session = this.extractSession(req);
-    const data = await this.pesananService.catatPembayaran(
+    const data = await this.service.catatPembayaran(
       req.validated.params.id as string,
       req.validated.body as CatatPembayaranBody,
       session,

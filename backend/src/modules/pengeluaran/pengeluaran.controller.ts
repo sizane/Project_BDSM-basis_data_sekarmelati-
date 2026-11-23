@@ -2,21 +2,21 @@ import type { Request, Response } from 'express';
 import { AppError, ERRORS } from '../../constants/error-codes';
 import { sendPaginated, sendSuccess } from '../../utils/response';
 import type { CreatePengeluaranBody, ListPengeluaranQuery } from './pengeluaran.schema';
-import { PengeluaranCoreService } from '../../core/services/PengeluaranCoreService';
-import { SessionContext } from '../../core/domain/SessionContext';
+import { PengeluaranService, pengeluaranService as defaultPengeluaranService } from './pengeluaran.service';
+import { SessionContext } from '../../middlewares/session-context';
 
 /**
  * PengeluaranController: Controller berbasis OOP untuk modul Pengeluaran.
  * Memenuhi kriteria:
- * - AGREGASI: Meng-agregasikan PengeluaranCoreService.
+ * - AGREGASI: Meng-agregasikan PengeluaranService.
  * - ASOSIASI: Menggunakan SessionContext.
  * - ASYNC: Asynchronous request handling.
  */
 export class PengeluaranController {
-  private readonly pengeluaranService: PengeluaranCoreService;
+  private readonly service: PengeluaranService;
 
-  constructor(service?: PengeluaranCoreService) {
-    this.pengeluaranService = service ?? new PengeluaranCoreService();
+  constructor(service?: PengeluaranService) {
+    this.service = service ?? defaultPengeluaranService;
   }
 
   private extractSession(req: Request): SessionContext {
@@ -25,14 +25,14 @@ export class PengeluaranController {
   }
 
   public list = async (req: Request, res: Response): Promise<void> => {
-    // Memanggil method overload cariPengeluaran() dengan parameter query
-    const { data, meta } = await this.pengeluaranService.cariPengeluaran(req.validated.query as ListPengeluaranQuery);
+    // Memanggil method overload listPengeluaran() dengan parameter query
+    const { data, meta } = await this.service.listPengeluaran(req.validated.query as ListPengeluaranQuery);
     sendPaginated(res, data, meta, 'Daftar pengeluaran berhasil dimuat');
   };
 
   public create = async (req: Request, res: Response): Promise<void> => {
     const session = this.extractSession(req);
-    const data = await this.pengeluaranService.createPengeluaran(
+    const data = await this.service.createPengeluaran(
       req.validated.body as CreatePengeluaranBody,
       session,
     );

@@ -1,15 +1,15 @@
 import type { Request, Response } from 'express';
-import { PesananCoreService } from '../../core/services/PesananCoreService';
+import { PesananService } from './pesanan.service';
 /**
  * PesananController: Controller berbasis OOP untuk modul Pesanan.
  * Memenuhi kriteria:
- * - AGREGASI: Meng-agregasikan PesananCoreService via konstruktor / dependency injection.
+ * - AGREGASI: Meng-agregasikan PesananService via konstruktor / dependency injection.
  * - ASOSIASI: Mengonversi request Express menjadi SessionContext dan meneruskannya ke Service.
  * - ASYNC: Seluruh handler request bersifat asynchronous.
  */
 export declare class PesananController {
-    private readonly pesananService;
-    constructor(service?: PesananCoreService);
+    private readonly service;
+    constructor(service?: PesananService);
     private extractSession;
     list: (req: Request, res: Response) => Promise<void>;
     detail: (req: Request, res: Response) => Promise<void>;

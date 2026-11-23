@@ -1,15 +1,15 @@
 import type { Request, Response } from 'express';
-import { PengeluaranCoreService } from '../../core/services/PengeluaranCoreService';
+import { PengeluaranService } from './pengeluaran.service';
 /**
  * PengeluaranController: Controller berbasis OOP untuk modul Pengeluaran.
  * Memenuhi kriteria:
- * - AGREGASI: Meng-agregasikan PengeluaranCoreService.
+ * - AGREGASI: Meng-agregasikan PengeluaranService.
  * - ASOSIASI: Menggunakan SessionContext.
  * - ASYNC: Asynchronous request handling.
  */
 export declare class PengeluaranController {
-    private readonly pengeluaranService;
-    constructor(service?: PengeluaranCoreService);
+    private readonly service;
+    constructor(service?: PengeluaranService);
     private extractSession;
     list: (req: Request, res: Response) => Promise<void>;
     create: (req: Request, res: Response) => Promise<void>;
