@@ -1,13 +1,13 @@
-import express from 'express';
-import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import cors from 'cors';
+import express from 'express';
+import helmet from 'helmet';
 import swaggerUi from 'swagger-ui-express';
-import apiRoutes from './routes';
-import { errorHandler } from './middlewares/error-handler';
-import { poolPromise } from './config/database';
-import { sendSuccess, sendError } from './utils/response';
-import { ERROR_CODES } from './constants/error-codes';
-import { swaggerDocument } from './config/swagger';
+import { env } from './config/env';
+import { swaggerSpec } from './config/swagger';
+import { errorHandler, notFoundHandler } from './middlewares/error-handler';
+import { sessionContext } from './middlewares/session-context';
+import routes from './routes';
 
 const app = express();
 
@@ -36,33 +36,13 @@ app.use(
 app.use(express.json({ limit: '100kb' }));
 >>>>>>> Stashed changes
 app.use(cookieParser());
+app.use(sessionContext);
 
-// Tangkap IP address client untuk keperluan Audit Log (TSD 6.3)[cite: 3]
-app.use((req, _res, next) => {
-  const forwarded = req.headers['x-forwarded-for'];
-  req.clientIp =
-    typeof forwarded === 'string'
-      ? forwarded.split(',')[0].trim()
-      : req.socket.remoteAddress || '127.0.0.1';
-  next();
-});
-
-<<<<<<< Updated upstream
 // Health Check Endpoint (Public)
 app.get('/health', async (_req, res) => {
   try {
     const pool = await poolPromise;
     await pool.request().query('SELECT 1 AS ok');
-=======
-app.get('/', (_req, res) => {
-  res.json({
-    status: 'success',
-    message: 'Welcome to API v1',
-  });
-});
-
-app.use('/api/v1', routes);
->>>>>>> Stashed changes
 
     return sendSuccess(
       res,

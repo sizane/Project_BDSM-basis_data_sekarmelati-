@@ -37,7 +37,13 @@ const schema = z.object({
 export type Env = z.infer<typeof schema>;
 
 function loadEnv(): Env {
-  const parsed = schema.safeParse(process.env);
+  // Alias untuk nama variabel lama di .env.example agar konfigurasi lama tidak diam-diam diabaikan.
+  const source: NodeJS.ProcessEnv = { ...process.env };
+  source.DB_SERVER ??= source.DB_HOST;
+  source.DB_TRUST_SERVER_CERT ??= source.DB_TRUST_SERVER_CERTIFICATE;
+  source.JWT_EXPIRES_IN_SECONDS ??= source.JWT_EXPIRES_IN;
+
+  const parsed = schema.safeParse(source);
   if (!parsed.success) {
     // Hanya nama variabel dan alasan yang dicetak, nilai tidak pernah ditampilkan.
     const lines = parsed.error.issues.map((i) => ` - ${i.path.join('.') || '(env)'}: ${i.message}`);
