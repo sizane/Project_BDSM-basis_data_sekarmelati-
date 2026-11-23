@@ -1,72 +1,45 @@
-import express from 'express';
-import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import cors from 'cors';
+import express from 'express';
+import helmet from 'helmet';
 import swaggerUi from 'swagger-ui-express';
-import apiRoutes from './routes';
-import { errorHandler } from './middlewares/error-handler';
-import { poolPromise } from './config/database';
-import { sendSuccess, sendError } from './utils/response';
-import { ERROR_CODES } from './constants/error-codes';
-import { swaggerDocument } from './config/swagger';
+import { env } from './config/env';
+import { swaggerSpec } from './config/swagger';
+import { errorHandler, notFoundHandler } from './middlewares/error-handler';
+import { sessionContext } from './middlewares/session-context';
+import routes from './routes';
 
 const app = express();
 
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
-app.use(express.json());
+app.set('trust proxy', env.TRUST_PROXY); // IP klien benar di belakang Nginx
+app.disable('x-powered-by');
+
+// Swagger UI memakai skrip inline, jadi dipasang sebelum helmet (CSP).
+if (env.ENABLE_SWAGGER) {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
+
+app.use(helmet());
+app.use(
+  cors({
+    origin: env.CORS_ORIGIN,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+    exposedHeaders: ['Content-Disposition'],
+  }),
+);
+app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
+app.use(sessionContext);
 
-// Tangkap IP address client untuk keperluan Audit Log (TSD 6.3)[cite: 3]
-app.use((req, _res, next) => {
-  const forwarded = req.headers['x-forwarded-for'];
-  req.clientIp =
-    typeof forwarded === 'string'
-      ? forwarded.split(',')[0].trim()
-      : req.socket.remoteAddress || '127.0.0.1';
-  next();
+// Liveness untuk Nginx / monitoring; tidak menyentuh database dan tidak membuka data apa pun.
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
 });
 
-// Health Check Endpoint (Public)
-app.get('/health', async (_req, res) => {
-  try {
-    const pool = await poolPromise;
-    await pool.request().query('SELECT 1 AS ok');
+app.use('/api/v1', routes);
 
-    return sendSuccess(
-      res,
-      {
-        server: 'up',
-        database: 'connected',
-        timestamp: new Date().toISOString(),
-      },
-      'Sistem dan database berjalan normal',
-      200
-    );
-  } catch (err) {
-    console.error('[HEALTH CHECK ERROR]:', err);
-    return sendError(
-      res,
-      'Koneksi database terputus',
-      ERROR_CODES.SYSTEM_ERROR,
-      503
-    );
-  }
-});
-
-// Swagger UI Placeholder di /api-docs (TSD 1.2)[cite: 3]
-// const swaggerDocument = {
-//   openapi: '3.0.0',
-//   info: { title: 'API Sistem Pencatatan Keuangan CV Sekar Melati', version: '1.0.0' },
-//   servers: [{ url: '/api/v1' }],
-// };
-// app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-
-// Swagger UI di /api-docs (TSD 1.2)[cite: 3]
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-
-// Base API Route /api/v1[cite: 3]
-app.use('/api/v1', apiRoutes);
-
-// Global Error Handler
+app.use(notFoundHandler);
 app.use(errorHandler);
 
 export default app;

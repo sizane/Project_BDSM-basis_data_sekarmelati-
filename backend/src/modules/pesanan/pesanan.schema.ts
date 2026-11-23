@@ -1,97 +1,77 @@
 import { z } from 'zod';
-import { sanitizeText } from '../../utils/sanitizer';
+import { ERRORS } from '../../constants/error-codes';
+import { paginationShape, zDate, zMoney, zOptionalText, zPhone, zText, zUuid } from '../../middlewares/validate';
 
-export const listPesananQuerySchema = z.object({
-    search: z.string().trim().optional().default(''),
-    status_pesanan: z.enum(['Belum Lunas', 'Lunas']).optional(),
-    page: z.coerce.number().int().min(1).default(1),
-    per_page: z.coerce.number().int().min(1).max(100).default(15),
-});
-
-export const pesananIdParamSchema = z.object({
-    id: z.uuid({ error: 'Format ID pesanan tidak valid' }),
-});
-const itemPesananSchema = z.object({
-    rincian_pesanan: z
-    .string()
-    .trim()
-    .min(1, 'Rincian pesanan wajib diisi')
-    .max(200, 'Rincian pesanan maksimal 200 karakter')
-    .transform(sanitizeText),
-    kuantitas: z
-    .number({ message: 'Kuantitas wajib diisi' })
-    .int('Kuantitas harus berupa bilangan bulat')
-    .positive('Kuantitas harus lebih dari 0'),
-    harga_per_item: z
-    .number({ message: 'Harga per item wajib diisi' })
-    .positive('Harga per item harus lebih dari Rp 0'),
-});
-
-export const createPesananSchema = z
-    .object({
-        nama_customer: z
-        .string()
-        .trim()
-        .min(1, 'Nama pelanggan wajib diisi')
-        .max(100, 'Nama pelanggan maksimal 100 karakter')
-        .transform(sanitizeText),
-    no_kontak: z
-        .string()
-        .trim()
-        .min(8, 'Nomor kontak wajib diisi dengan benar')
-        .max(20, 'Nomor kontak maksimal 20 karakter')
-        .regex(/^[0-9+]+$/, 'Nomor kontak hanya boleh berisi angka'),
-    items: z
-        .array(itemPesananSchema)
-        .min(1, 'Minimal harus ada 1 rincian pesanan'),
-    dp: z
-        .number()
-        .min(0, 'DP tidak boleh negatif')
-        .optional()
-        .default(0),
-    tenggat: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tenggat harus YYYY-MM-DD'),
-  })
-  .superRefine((data, ctx) => {
-    const totalHarga = data.items.reduce(
-      (sum, item) => sum + item.kuantitas * item.harga_per_item,
-      0
-    );
-
-    if (data.dp > totalHarga) {
+const itemSchema = z.object({
+  rincian_pesanan: zText('Rincian pesanan wajib diisi (maks. 200 karakter)', 200, { multiline: true }),
+  kuantitas: z
+    .number({
+      required_error: 'Kuantitas harus berupa bilangan bulat lebih dari 0',
+      invalid_type_error: 'Kuantitas harus berupa bilangan bulat lebih dari 0',
+    })
+    .int({ message: ERRORS.VAL_QTY.message })
+    .superRefine((v, ctx) => {
+      if (v <= 0) {
         ctx.addIssue({
-            code: 'custom',
-            path: ['dp'],
-            message: 'DP tidak boleh negatif atau melebihi total harga',
+          code: z.ZodIssueCode.custom,
+          message: ERRORS.VAL_QTY.message,
+          params: { code: ERRORS.VAL_QTY.code },
         });
-    }
-
-    // Validasi tenggat >= tanggal masuk hari ini (WIB / UTC+7)
-    const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
-    const todayStr = nowWib.toISOString().split('T')[0];
-
-    if (data.tenggat < todayStr!) {
-        ctx.addIssue({
-            code: 'custom',
-            path: ['tenggat'],
-            message: 'Tenggat tidak boleh sebelum tanggal masuk',
-        });
-    }
-  });
-
-export const createPembayaranSchema = z.object({
-    tanggal_bayar: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal bayar harus YYYY-MM-DD'),
-    jumlah: z
-    .number({ message: 'Nominal pembayaran wajib diisi' })
-    .positive('Nominal pembayaran harus lebih besar dari Rp 0.'),
-    jenis_pembayaran: z.enum(['DP', 'Cicilan', 'Pelunasan'], {
-        message: 'Pilih jenis pembayaran yang valid',
+      }
     }),
+  harga_per_item: zMoney({
+    required: 'Harga per item wajib diisi',
+    min: 'positive',
+    negative: { message: ERRORS.VAL_NEGATIVE.message, code: ERRORS.VAL_NEGATIVE.code },
+    zero: { message: 'Harga per item harus lebih dari Rp 0', code: ERRORS.VAL_NEGATIVE.code },
+  }),
 });
 
-export type ListPesananQuery = z.infer<typeof listPesananQuerySchema>;
-export type CreatePesananInput = z.infer<typeof createPesananSchema>;
-export type CreatePembayaranInput = z.infer<typeof createPembayaranSchema>;
+/**
+ * POST /pesanan (TSD 3.3e). Body memakai array `items`, tetapi sp_catat_pesanan_baru
+ * (TSD 5.1) baru menerima satu item per pesanan, sehingga dibatasi tepat 1 item.
+ * Untuk multi-item: ubah SP agar menerima banyak item, lalu hapus .length(1) di bawah.
+ */
+export const createPesananBody = z.object({
+  nama_customer: zText('Nama pelanggan wajib diisi (maks. 100 karakter)', 100),
+  no_kontak: zPhone('Nomor kontak wajib diisi dengan benar'),
+  items: z
+    .array(itemSchema, {
+      required_error: 'Rincian pesanan wajib diisi',
+      invalid_type_error: 'Rincian pesanan wajib diisi',
+    })
+    .length(1, 'Satu pesanan saat ini hanya dapat memuat satu item'),
+  dp: zMoney({
+    required: 'DP harus berupa angka',
+    min: 'nonnegative',
+    negative: { message: ERRORS.VAL_NEGATIVE.message, code: ERRORS.VAL_NEGATIVE.code },
+  }).default(0),
+  tenggat: zDate('Tenggat pesanan wajib diisi dengan tanggal yang valid'),
+});
+
+export type CreatePesananBody = z.infer<typeof createPesananBody>;
+
+export const pesananIdParams = z.object({ id: zUuid('ID pesanan tidak valid') });
+
+export const listPesananQuery = z.object({
+  search: zOptionalText('Kata kunci pencarian tidak valid', 100),
+  status_pesanan: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(['Belum Lunas', 'Lunas'], { errorMap: () => ({ message: 'Status pesanan tidak valid' }) }).optional(),
+  ),
+  ...paginationShape,
+});
+export type ListPesananQuery = z.infer<typeof listPesananQuery>;
+
+export const catatPembayaranBody = z.object({
+  tanggal_bayar: zDate('Tanggal bayar wajib diisi'),
+  jumlah: zMoney({
+    required: 'Jumlah bayar wajib diisi',
+    min: 'positive',
+    negative: { message: 'Nominal pembayaran harus lebih besar dari Rp 0.', code: ERRORS.VAL_NOMINAL.code },
+  }),
+  jenis_pembayaran: z.enum(['DP', 'Cicilan', 'Pelunasan'], {
+    errorMap: () => ({ message: 'Pilih jenis pembayaran yang valid' }),
+  }),
+});
+export type CatatPembayaranBody = z.infer<typeof catatPembayaranBody>;
