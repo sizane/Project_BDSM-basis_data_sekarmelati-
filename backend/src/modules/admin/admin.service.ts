@@ -32,101 +32,109 @@ function toDto(row: AdminRow) {
   };
 }
 
-export async function listAdmins(query: ListAdminsQuery) {
-  const count = await runQuery<{ total: number }>('SELECT COUNT(*) AS total FROM dbo.admins');
-  const rows = await runQuery<AdminRow>(
-    `SELECT ${ADMIN_COLUMNS} FROM dbo.admins
-      ORDER BY created_at ASC, admin_id
-     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
-    [p.int('offset', offsetOf(query.page, query.per_page)), p.int('limit', query.per_page)],
-  );
-  return {
-    data: rows.recordset.map(toDto),
-    meta: buildMeta(query.page, query.per_page, count.recordset[0]?.total ?? 0),
-  };
-}
-
-/** Pemilik boleh melihat semua admin; Admin hanya dirinya sendiri (prinsip least privilege). */
-export async function getAdmin(req: Request, id: string) {
-  const user = req.user;
-  if (!user) throw new AppError(ERRORS.AUTH_REQUIRED);
-  if (user.role !== ROLES.PEMILIK && user.adminId.toLowerCase() !== id.toLowerCase()) {
-    await catatAksesDitolak(req, [ROLES.PEMILIK]);
-    throw new AppError(ERRORS.AUTH_FORBIDDEN);
+export class AdminService {
+  async listAdmins(query: ListAdminsQuery) {
+    const count = await runQuery<{ total: number }>('SELECT COUNT(*) AS total FROM dbo.admins');
+    const rows = await runQuery<AdminRow>(
+      `SELECT ${ADMIN_COLUMNS} FROM dbo.admins
+        ORDER BY created_at ASC, admin_id
+       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+      [p.int('offset', offsetOf(query.page, query.per_page)), p.int('limit', query.per_page)],
+    );
+    return {
+      data: rows.recordset.map(toDto),
+      meta: buildMeta(query.page, query.per_page, count.recordset[0]?.total ?? 0),
+    };
   }
-  const r = await runQuery<AdminRow>(`SELECT ${ADMIN_COLUMNS} FROM dbo.admins WHERE admin_id = @id`, [
-    p.uuid('id', id),
-  ]);
-  const row = r.recordset[0];
-  if (!row) throw new AppError(ERRORS.NOT_FOUND_ADMIN);
-  return toDto(row);
-}
 
-export async function createAdmin(req: Request, body: CreateAdminBody) {
-  const passwordHash = await hashPassword(body.password);
-  try {
-    const r = await runQuery<{ admin_id: string }>(
-      `INSERT INTO dbo.admins (username, password_hash, full_name, role)
-       OUTPUT INSERTED.admin_id
-       VALUES (@username, @password_hash, @full_name, @role)`,
-      [
-        p.varchar('username', body.username, 50),
-        p.varchar('password_hash', passwordHash, 255),
-        p.varchar('full_name', body.full_name, 100),
-        p.varchar('role', body.role, 20),
-      ],
+  /** Pemilik boleh melihat semua admin; Admin hanya dirinya sendiri (prinsip least privilege). */
+  async getAdmin(req: Request, id: string) {
+    const user = req.user;
+    if (!user) throw new AppError(ERRORS.AUTH_REQUIRED);
+    if (user.role !== ROLES.PEMILIK && user.adminId.toLowerCase() !== id.toLowerCase()) {
+      await catatAksesDitolak(req, [ROLES.PEMILIK]);
+      throw new AppError(ERRORS.AUTH_FORBIDDEN);
+    }
+    const r = await runQuery<AdminRow>(`SELECT ${ADMIN_COLUMNS} FROM dbo.admins WHERE admin_id = @id`, [
+      p.uuid('id', id),
+    ]);
+    const row = r.recordset[0];
+    if (!row) throw new AppError(ERRORS.NOT_FOUND_ADMIN);
+    return toDto(row);
+  }
+
+  async createAdmin(req: Request, body: CreateAdminBody) {
+    const passwordHash = await hashPassword(body.password);
+    try {
+      const r = await runQuery<{ admin_id: string }>(
+        `INSERT INTO dbo.admins (username, password_hash, full_name, role)
+         OUTPUT INSERTED.admin_id
+         VALUES (@username, @password_hash, @full_name, @role)`,
+        [
+          p.varchar('username', body.username, 50),
+          p.varchar('password_hash', passwordHash, 255),
+          p.varchar('full_name', body.full_name, 100),
+          p.varchar('role', body.role, 20),
+        ],
+        req.dbContext,
+      );
+      const adminId = r.recordset[0]?.admin_id;
+      if (!adminId) throw new AppError(ERRORS.SYS_DATABASE);
+
+      await tulisAuditLog({
+        adminId: req.user?.adminId ?? null,
+        adminUsername: req.user?.username ?? 'unknown',
+        actionType: 'ADMIN_CREATED',
+        resourceType: 'admins',
+        resourceId: adminId,
+        newValues: { username: body.username, full_name: body.full_name, role: body.role },
+        ipAddress: req.clientIp,
+      });
+
+      return { admin_id: adminId, username: body.username, full_name: body.full_name, role: body.role };
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new AppError(ERRORS.CONFLICT_USERNAME);
+      throw err;
+    }
+  }
+
+  async updateRole(req: Request, id: string, role: AssignableRole) {
+    const current = await runQuery<AdminRow>(`SELECT ${ADMIN_COLUMNS} FROM dbo.admins WHERE admin_id = @id`, [
+      p.uuid('id', id),
+    ]);
+    const target = current.recordset[0];
+    if (!target) throw new AppError(ERRORS.NOT_FOUND_ADMIN);
+
+    if (target.role === role) return toDto(target); // tidak ada perubahan
+
+    // Guard di dalam UPDATE: Pemilik aktif terakhir tidak boleh diturunkan menjadi Admin.
+    const upd = await runQuery<{ affected: number }>(
+      `UPDATE dbo.admins SET role = @role
+        WHERE admin_id = @id
+          AND NOT (role = 'Pemilik' AND @role = 'Admin' AND is_active = 1
+                   AND (SELECT COUNT(*) FROM dbo.admins WHERE role = 'Pemilik' AND is_active = 1) <= 1);
+       SELECT @@ROWCOUNT AS affected;`,
+      [p.uuid('id', id), p.varchar('role', role, 20)],
       req.dbContext,
     );
-    const adminId = r.recordset[0]?.admin_id;
-    if (!adminId) throw new AppError(ERRORS.SYS_DATABASE);
+    if ((upd.recordset[0]?.affected ?? 0) === 0) throw new AppError(ERRORS.CONFLICT_LAST_OWNER);
 
     await tulisAuditLog({
       adminId: req.user?.adminId ?? null,
       adminUsername: req.user?.username ?? 'unknown',
-      actionType: 'ADMIN_CREATED',
+      actionType: 'ROLE_CHANGED',
       resourceType: 'admins',
-      resourceId: adminId,
-      newValues: { username: body.username, full_name: body.full_name, role: body.role },
+      resourceId: id,
+      newValues: { username: target.username, previous_role: target.role, role },
       ipAddress: req.clientIp,
     });
 
-    return { admin_id: adminId, username: body.username, full_name: body.full_name, role: body.role };
-  } catch (err) {
-    if (isUniqueViolation(err)) throw new AppError(ERRORS.CONFLICT_USERNAME);
-    throw err;
+    return toDto({ ...target, role });
   }
 }
 
-export async function updateRole(req: Request, id: string, role: AssignableRole) {
-  const current = await runQuery<AdminRow>(`SELECT ${ADMIN_COLUMNS} FROM dbo.admins WHERE admin_id = @id`, [
-    p.uuid('id', id),
-  ]);
-  const target = current.recordset[0];
-  if (!target) throw new AppError(ERRORS.NOT_FOUND_ADMIN);
-
-  if (target.role === role) return toDto(target); // tidak ada perubahan
-
-  // Guard di dalam UPDATE: Pemilik aktif terakhir tidak boleh diturunkan menjadi Admin.
-  const upd = await runQuery<{ affected: number }>(
-    `UPDATE dbo.admins SET role = @role
-      WHERE admin_id = @id
-        AND NOT (role = 'Pemilik' AND @role = 'Admin' AND is_active = 1
-                 AND (SELECT COUNT(*) FROM dbo.admins WHERE role = 'Pemilik' AND is_active = 1) <= 1);
-     SELECT @@ROWCOUNT AS affected;`,
-    [p.uuid('id', id), p.varchar('role', role, 20)],
-    req.dbContext,
-  );
-  if ((upd.recordset[0]?.affected ?? 0) === 0) throw new AppError(ERRORS.CONFLICT_LAST_OWNER);
-
-  await tulisAuditLog({
-    adminId: req.user?.adminId ?? null,
-    adminUsername: req.user?.username ?? 'unknown',
-    actionType: 'ROLE_CHANGED',
-    resourceType: 'admins',
-    resourceId: id,
-    newValues: { username: target.username, previous_role: target.role, role },
-    ipAddress: req.clientIp,
-  });
-
-  return toDto({ ...target, role });
-}
+const adminService = new AdminService();
+export const listAdmins = adminService.listAdmins.bind(adminService);
+export const getAdmin = adminService.getAdmin.bind(adminService);
+export const createAdmin = adminService.createAdmin.bind(adminService);
+export const updateRole = adminService.updateRole.bind(adminService);
