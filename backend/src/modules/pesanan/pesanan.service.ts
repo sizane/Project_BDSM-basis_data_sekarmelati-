@@ -347,15 +347,31 @@ export class PesananService {
 
   // --- KOMPOSISI & ENKAPSULASI: Membentuk objek domain Pesanan beserta ItemPesanan-nya ---
   public async getPesananModelById(id: string): Promise<Pesanan | null> {
-    const res = await runQuery<any>(
-      `SELECT pesanan_id, no_pesanan, nama_customer, no_kontak, tanggal_masuk, tenggat,
-              harga_total, total_paid, remaining_debt, status_pesanan, status_pembayaran, catatan
-         FROM dbo.pesanan
-        WHERE pesanan_id = @id`,
+    const result = await runQuery(
+      `SELECT p.pesanan_id, p.no_pesanan, p.tanggal_masuk, p.tenggat, p.tanggal_lunas, p.harga_total,
+              p.status_pesanan,
+              c.nama_customer, c.no_kontak
+         FROM dbo.pesanan p
+         JOIN dbo.customers c ON c.customer_id = p.customer_id
+        WHERE p.pesanan_id = @id;
+
+       SELECT item_id, rincian_pesanan, jumlah, harga_per_item
+         FROM dbo.item_pesanan
+        WHERE pesanan_id = @id
+        ORDER BY rincian_pesanan;
+
+       SELECT ISNULL(SUM(jumlah), 0) AS total_paid
+         FROM dbo.pembayaran
+        WHERE pesanan_id = @id;`,
       [p.uuid('id', id)],
     );
-    const row = res.recordset?.[0];
+
+    const sets = result.recordsets as unknown as Array<Array<Record<string, any>>>;
+    const row = sets[0]?.[0];
     if (!row) return null;
+
+    const items = sets[1] ?? [];
+    const totalPaid = Number(sets[2]?.[0]?.total_paid ?? 0);
 
     const pesanan = new Pesanan(
       row.pesanan_id,
@@ -366,19 +382,12 @@ export class PesananService {
       row.tanggal_masuk,
       row.tenggat,
       row.status_pesanan,
-      Number(row.total_paid),
-      row.catatan ?? '',
+      totalPaid,
+      row.tanggal_lunas ? `Lunas pada ${formatSqlDate(row.tanggal_lunas)}` : '',
     );
 
-    const itemRes = await runQuery<any>(
-      `SELECT detail_id, rincian_pesanan, kuantitas, harga_per_item, subtotal
-         FROM dbo.detail_pesanan
-        WHERE pesanan_id = @id`,
-      [p.uuid('id', id)],
-    );
-
-    for (const it of itemRes.recordset ?? []) {
-      pesanan.tambahItem(it.rincian_pesanan, it.kuantitas, Number(it.harga_per_item));
+    for (const it of items) {
+      pesanan.tambahItem(it.rincian_pesanan, it.jumlah, Number(it.harga_per_item));
     }
 
     return pesanan;
