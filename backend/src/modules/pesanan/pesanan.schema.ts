@@ -6,8 +6,7 @@ const itemSchema = z.object({
   rincian_pesanan: zText('Rincian pesanan wajib diisi (maks. 200 karakter)', 200, { multiline: true }),
   kuantitas: z
     .number({
-      required_error: 'Kuantitas harus berupa bilangan bulat lebih dari 0',
-      invalid_type_error: 'Kuantitas harus berupa bilangan bulat lebih dari 0',
+      error: 'Kuantitas harus berupa bilangan bulat lebih dari 0',
     })
     .int({ message: ERRORS.VAL_QTY.message })
     .superRefine((v, ctx) => {
@@ -37,8 +36,7 @@ export const createPesananBody = z.object({
   no_kontak: zPhone('Nomor kontak wajib diisi dengan benar'),
   items: z
     .array(itemSchema, {
-      required_error: 'Rincian pesanan wajib diisi',
-      invalid_type_error: 'Rincian pesanan wajib diisi',
+      error: 'Rincian pesanan wajib diisi',
     })
     .length(1, 'Satu pesanan saat ini hanya dapat memuat satu item'),
   dp: zMoney({
@@ -57,7 +55,7 @@ export const listPesananQuery = z.object({
   search: zOptionalText('Kata kunci pencarian tidak valid', 100),
   status_pesanan: z.preprocess(
     (v) => (v === '' ? undefined : v),
-    z.enum(['Belum Lunas', 'Lunas'], { errorMap: () => ({ message: 'Status pesanan tidak valid' }) }).optional(),
+    z.enum(['Belum Lunas', 'Lunas'], { error: 'Status pesanan tidak valid' }).optional(),
   ),
   ...paginationShape,
 });
@@ -71,7 +69,7 @@ export const catatPembayaranBody = z.object({
     negative: { message: 'Nominal pembayaran harus lebih besar dari Rp 0.', code: ERRORS.VAL_NOMINAL.code },
   }),
   jenis_pembayaran: z.enum(['DP', 'Cicilan', 'Pelunasan'], {
-    errorMap: () => ({ message: 'Pilih jenis pembayaran yang valid' }),
+    error: 'Pilih jenis pembayaran yang valid',
   }),
 });
 export type CatatPembayaranBody = z.infer<typeof catatPembayaranBody>;

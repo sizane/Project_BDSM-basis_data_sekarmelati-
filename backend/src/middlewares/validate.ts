@@ -20,7 +20,7 @@ function addCodedIssue(ctx: z.RefinementCtx, message: string, code: string): voi
 /** Teks wajib: disanitasi, tidak boleh kosong, dibatasi panjang. */
 export function zText(message: string, max: number, options: { multiline?: boolean } = {}) {
   return z
-    .string({ required_error: message, invalid_type_error: message })
+    .string({ error: message })
     .transform((v) => sanitizeText(v, options))
     .pipe(z.string().min(1, message).max(max, message));
 }
@@ -36,7 +36,7 @@ export function zOptionalText(message: string, max: number, options: { multiline
 /** Nomor telepon disimpan sebagai teks; hanya angka dengan awalan + opsional. */
 export function zPhone(message: string) {
   return z
-    .string({ required_error: message, invalid_type_error: message })
+    .string({ error: message })
     .transform((v) => normalizePhone(v.trim()))
     .pipe(z.string().regex(/^\+?[0-9]{8,15}$/, message));
 }
@@ -44,7 +44,7 @@ export function zPhone(message: string) {
 /** Tanggal 'YYYY-MM-DD' yang valid pada kalender. */
 export function zDate(message: string) {
   return z
-    .string({ required_error: message, invalid_type_error: message })
+    .string({ error: message })
     .refine(isValidDateString, { message });
 }
 
@@ -66,7 +66,7 @@ interface MoneyOptions {
 /** Nominal Rupiah bilangan bulat dengan batas atas (TSD 6.1). */
 export function zMoney(o: MoneyOptions) {
   return z
-    .number({ required_error: o.required, invalid_type_error: o.required })
+    .number({ error: o.required })
     .int({ message: 'Nominal harus berupa bilangan bulat' })
     .superRefine((v, ctx) => {
       if (v < 0) addCodedIssue(ctx, o.negative.message, o.negative.code);
@@ -78,18 +78,18 @@ export function zMoney(o: MoneyOptions) {
 }
 
 export function zUuid(message = 'ID tidak valid') {
-  return z.string({ required_error: message, invalid_type_error: message }).uuid(message);
+  return z.string({ error: message }).uuid(message);
 }
 
 /** ?page=1&per_page=15 (default 15, maksimum 100) - TSD 7.2 / AC-11. */
 export const paginationShape = {
   page: z.coerce
-    .number({ invalid_type_error: 'Nomor halaman tidak valid' })
+    .number({ error: 'Nomor halaman tidak valid' })
     .int('Nomor halaman tidak valid')
     .min(1, 'Nomor halaman tidak valid')
     .default(1),
   per_page: z.coerce
-    .number({ invalid_type_error: 'Jumlah data per halaman tidak valid' })
+    .number({ error: 'Jumlah data per halaman tidak valid' })
     .int('Jumlah data per halaman tidak valid')
     .min(1, 'Jumlah data per halaman tidak valid')
     .max(MAX_PER_PAGE, `Jumlah data per halaman maksimal ${MAX_PER_PAGE}`)
@@ -109,7 +109,7 @@ interface Schemas {
 }
 
 function issueCode(issue: z.ZodIssue): string {
-  const params = (issue as z.ZodCustomIssue).params as { code?: string } | undefined;
+  const params = (issue as any).params as { code?: string } | undefined;
   return params?.code ?? ERRORS.VAL_REQUIRED.code;
 }
 

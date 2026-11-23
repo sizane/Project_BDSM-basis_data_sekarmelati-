@@ -104,7 +104,8 @@ export async function listAuditLogs(
     params.push(p.varchar('nama', `%${escapeLike(query.nama_pengguna)}%`, 60));
   }
   if (query.jenis_tindakan) {
-    where.push(ACTION_PREDICATES[query.jenis_tindakan]);
+    const predicate = (ACTION_PREDICATES as Record<string, string>)[query.jenis_tindakan];
+    if (predicate) where.push(predicate);
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 

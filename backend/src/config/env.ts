@@ -19,15 +19,15 @@ const schema = z.object({
     .string()
     .default('http://localhost:5173')
     .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean)),
-  ENABLE_SWAGGER: booleanString.default('true'),
+  ENABLE_SWAGGER: booleanString.default(true),
 
   DB_SERVER: z.string().min(1, 'DB_SERVER wajib diisi'),
   DB_PORT: z.coerce.number().int().min(1).max(65535).default(1433),
   DB_NAME: z.string().min(1, 'DB_NAME wajib diisi'),
   DB_USER: z.string().min(1, 'DB_USER wajib diisi'),
   DB_PASSWORD: z.string().min(1, 'DB_PASSWORD wajib diisi'),
-  DB_ENCRYPT: booleanString.default('false'),
-  DB_TRUST_SERVER_CERT: booleanString.default('true'),
+  DB_ENCRYPT: booleanString.default(false),
+  DB_TRUST_SERVER_CERT: booleanString.default(true),
 
   JWT_SECRET: z.string().min(32, 'JWT_SECRET minimal 32 karakter'),
   JWT_EXPIRES_IN_SECONDS: z.coerce.number().int().min(60).default(86400),

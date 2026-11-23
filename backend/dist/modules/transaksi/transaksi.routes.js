@@ -1,0 +1,10 @@
+import { Router } from 'express';
+import { ROLES } from '../../constants/roles';
+import { checkRole } from '../../middlewares/authorize';
+import { validate } from '../../middlewares/validate';
+import * as controller from './transaksi.controller';
+import { listTransaksiQuery } from './transaksi.schema';
+const router = Router();
+router.get('/', checkRole(ROLES.PEMILIK, ROLES.ADMIN), validate({ query: listTransaksiQuery }), controller.list);
+export default router;
+//# sourceMappingURL=transaksi.routes.js.map

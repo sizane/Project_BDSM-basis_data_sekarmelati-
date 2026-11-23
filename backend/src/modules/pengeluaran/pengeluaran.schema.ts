@@ -11,8 +11,8 @@ export type ListPengeluaranQuery = z.infer<typeof listPengeluaranQuery>;
 export const createPengeluaranBody = z
   .object({
     tanggal_pengeluaran: zDate('Tanggal pengeluaran wajib diisi'),
-    kategori_pengeluaran: z.enum(KATEGORI_PENGELUARAN, {
-      errorMap: () => ({ message: 'Pilih kategori biaya yang valid' }),
+    kategori_pengeluaran: z.enum([...KATEGORI_PENGELUARAN] as [string, ...string[]], {
+      error: 'Pilih kategori biaya yang valid',
     }),
     jumlah: zMoney({
       required: 'Nominal pengeluaran wajib diisi dengan angka lebih dari 0.',

@@ -1,0 +1,1 @@
+{"version":3,"file":"session-context.d.ts","sourceRoot":"","sources":["../../src/middlewares/session-context.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,cAAc,EAAE,OAAO,EAAE,MAAM,SAAS,CAAC;AACvD,OAAO,KAAK,EAAE,SAAS,EAAE,MAAM,oBAAoB,CAAC;AAQpD,qFAAqF;AACrF,wBAAgB,cAAc,CAAC,GAAG,EAAE,OAAO,GAAG,SAAS,CAMtD;AAED;;;;GAIG;AACH,eAAO,MAAM,cAAc,EAAE,cAK5B,CAAC"}

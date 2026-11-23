@@ -40,7 +40,7 @@ export const listAuditLogsQuery = z.object({
   nama_pengguna: zOptionalText('Pilih pengguna yang valid', 50),
   jenis_tindakan: z.preprocess(
     (v) => (v === '' ? undefined : v),
-    z.enum(JENIS_TINDAKAN, { errorMap: () => ({ message: 'Pilih jenis tindakan yang tersedia' }) }).optional(),
+    z.enum([...JENIS_TINDAKAN] as [string, ...string[]], { error: 'Pilih jenis tindakan yang tersedia' }).optional(),
   ),
   ...paginationShape,
 });

@@ -6,7 +6,7 @@ export const listPiutangQuery = z.object({
   sort: z.preprocess(
     (v) => (v === '' ? undefined : v),
     z
-      .enum(['sisa_terbesar', 'tenggat_terdekat'], { errorMap: () => ({ message: 'Pengurutan tidak valid' }) })
+      .enum(['sisa_terbesar', 'tenggat_terdekat'], { error: 'Pengurutan tidak valid' })
       .default('sisa_terbesar'),
   ),
   ...paginationShape,
