@@ -27,7 +27,7 @@ router.use('/piutang', authenticate, piutangRoutes);
 router.use('/riwayat-transaksi', authenticate, transaksiRoutes);
 router.use('/pengeluaran', authenticate, pengeluaranRoutes);
 router.use('/laporan', authenticate, laporanRoutes);
-// TSD 3.2 /admin/audit-logs, TSD 3.3 /audit-logs: keduanya masuk.
+// TSD 3.2 menulis /admin/audit-logs, TSD 3.3 menulis /audit-logs: keduanya masuk.
 router.use(['/audit-logs', '/admin/audit-logs'], authenticate, auditRoutes);
 
 export default router;

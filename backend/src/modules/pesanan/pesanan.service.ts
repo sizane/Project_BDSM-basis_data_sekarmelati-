@@ -6,14 +6,6 @@ import { buildMeta, offsetOf } from '../../utils/response';
 import type { PaginationMeta } from '../../types/api-response';
 import { MAX_RUPIAH } from '../../middlewares/validate';
 import type { CatatPembayaranBody, CreatePesananBody, ListPesananQuery } from './pesanan.schema';
-import { p, runProc, runQuery, sql, type SqlParam } from '../../config/database';
-import { AppError, ERRORS, type ErrorDef } from '../../constants/error-codes';
-import { escapeLike } from '../../utils/sanitizer';
-import { formatSqlDate, todayWIB, toSqlDate } from '../../utils/date';
-import { buildMeta, offsetOf } from '../../utils/response';
-import type { PaginationMeta } from '../../types/api-response';
-import { MAX_RUPIAH } from '../../middlewares/validate';
-import type { CatatPembayaranBody, CreatePesananBody, ListPesananQuery } from './pesanan.schema';
 
 // ---------------------------------------------------------------------------
 // Daftar pesanan (SCR-03) - sumber: view v_ringkasan_pesanan
@@ -112,74 +104,85 @@ export async function getPesananDetail(pesananId: string) {
   const hargaTotal = Number(pesanan.harga_total);
 
   return {
-    data: {
-      pesanan_id: row.pesanan_id,
-      no_pesanan: row.no_pesanan,
-      harga_total: row.harga_total,
-      sisa_piutang: row.sisa_piutang,
-      status_pesanan: row.status_pesanan,
+    pesanan_id: pesanan.pesanan_id,
+    no_pesanan: pesanan.no_pesanan,
+    tanggal_masuk: formatSqlDate(pesanan.tanggal_masuk),
+    tenggat: formatSqlDate(pesanan.tenggat),
+    tanggal_lunas: formatSqlDate(pesanan.tanggal_lunas),
+    nama_customer: pesanan.nama_customer,
+    customer: {
+      customer_id: pesanan.customer_id,
+      nama_customer: pesanan.nama_customer,
+      no_kontak: pesanan.no_kontak,
     },
+    dicatat_oleh: pesanan.dicatat_oleh,
+    items: items.map((i) => ({
+      item_id: i.item_id,
+      rincian_pesanan: i.rincian_pesanan,
+      kuantitas: i.jumlah,
+      harga_per_item: Number(i.harga_per_item),
+      subtotal: i.jumlah * Number(i.harga_per_item),
+    })),
+    harga_total: hargaTotal,
+    total_dibayar: totalDibayar,
+    sisa_piutang: Math.max(0, hargaTotal - totalDibayar),
+    status_pesanan: pesanan.status_pesanan,
+    riwayat_pembayaran: pembayaran.map((b) => ({
+      pembayaran_id: b.pembayaran_id,
+      tanggal_bayar: formatSqlDate(b.tanggal_bayar),
+      jenis_pembayaran: b.jenis_pembayaran,
+      jumlah: Number(b.jumlah),
+    })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Tambah pesanan (FSD-2.2) - sp_catat_pesanan_baru
+// ---------------------------------------------------------------------------
+
+const PESANAN_RESULT_MAP: Record<string, ErrorDef> = {
+  QTY_INVALID: ERRORS.VAL_QTY,
+  PRICE_INVALID: ERRORS.VAL_NEGATIVE,
+  DP_NEGATIVE: ERRORS.VAL_NEGATIVE,
+  DP_EXCEEDS_TOTAL: ERRORS.VAL_DP_EXCEEDS,
+  DUE_DATE_INVALID: ERRORS.VAL_DUE_DATE,
+  SYSTEM_ERROR: ERRORS.SYS_DATABASE,
 };
 
-export const getDetailPesanan = async (pesananId: string) => {
-  const pool = await poolPromise;
+interface CatatPesananRow {
+  result: string;
+  pesanan_id: string | null;
+  no_pesanan: string | null;
+  harga_total: number | null;
+  sisa_piutang: number | null;
+  status_pesanan: string | null;
+}
 
-  const headerRes = await pool
-    .request()
-    .input('pesanan_id', sql.UniqueIdentifier, pesananId)
-    .query(`
-      SELECT
-        p.pesanan_id,
-        p.no_pesanan,
-        p.tanggal_masuk,
-        p.tenggat,
-        p.harga_total,
-        dbo.fn_hitung_total_dibayar(p.pesanan_id) AS total_dibayar,
-        dbo.fn_hitung_sisa_piutang(p.pesanan_id) AS sisa_piutang,
-        p.status_pesanan,
-        c.customer_id,
-        c.nama_customer,
-        c.no_kontak
-      FROM pesanan p
-      JOIN customers c ON p.customer_id = c.customer_id
-      WHERE p.pesanan_id = @pesanan_id
-    `);
+export async function createPesanan(body: CreatePesananBody, adminId: string, ip: string) {
+  const item = body.items[0];
+  if (!item) throw new AppError(ERRORS.VAL_REQUIRED); // dijamin 1 item oleh schema (.length(1))
+  const total = item.kuantitas * item.harga_per_item;
 
-  const order = headerRes.recordset[0];
-  if (!order) {
-    return null;
-  }
+  // Pra-validasi cepat; SP tetap memvalidasi ulang sebagai pagar terakhir di database.
+  if (total > MAX_RUPIAH) throw new AppError(ERRORS.VAL_TOO_LARGE);
+  if (body.dp > total) throw new AppError(ERRORS.VAL_DP_EXCEEDS);
+  if (body.tenggat < todayWIB()) throw new AppError(ERRORS.VAL_DUE_DATE);
 
-  const [itemsRes, paymentsRes] = await Promise.all([
-    pool
-      .request()
-      .input('pesanan_id', sql.UniqueIdentifier, pesananId)
-      .query(`
-        SELECT
-          item_id,
-          rincian_pesanan,
-          jumlah,
-          harga_per_item,
-          (jumlah * harga_per_item) AS subtotal
-        FROM item_pesanan
-        WHERE pesanan_id = @pesanan_id
-      `),
-    pool
-      .request()
-      .input('pesanan_id', sql.UniqueIdentifier, pesananId)
-      .query(`
-        SELECT
-          pembayaran_id,
-          tanggal_bayar,
-          jenis_pembayaran,
-          jumlah,
-          created_at
-        FROM pembayaran
-        WHERE pesanan_id = @pesanan_id
-        ORDER BY tanggal_bayar ASC, created_at ASC
-      `),
+  const result = await runProc<CatatPesananRow>('sp_catat_pesanan_baru', [
+    p.uuid('admin_id', adminId),
+    p.varchar('nama_customer', body.nama_customer, 100),
+    p.varchar('no_kontak', body.no_kontak, 20),
+    p.varchar('rincian_pesanan', item.rincian_pesanan, 200),
+    p.int('kuantitas', item.kuantitas),
+    p.decimal('harga_per_item', item.harga_per_item),
+    p.decimal('dp', body.dp),
+    p.date('tenggat', toSqlDate(body.tenggat)),
+    p.varchar('ip_address', ip, 45),
   ]);
+
+  const row = result.recordset?.[0];
+  if (!row) throw new AppError(ERRORS.SYS_DATABASE);
+  if (row.result !== 'SUCCESS') throw new AppError(PESANAN_RESULT_MAP[row.result] ?? ERRORS.SYS_DATABASE);
 
   return {
     pesanan_id: row.pesanan_id,

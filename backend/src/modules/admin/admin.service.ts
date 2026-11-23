@@ -77,7 +77,8 @@ export async function createAdmin(req: Request, body: CreateAdminBody) {
       ],
       req.dbContext,
     );
-    const adminId = r.recordset[0].admin_id;
+    const adminId = r.recordset[0]?.admin_id;
+    if (!adminId) throw new AppError(ERRORS.SYS_DATABASE);
 
     await tulisAuditLog({
       adminId: req.user?.adminId ?? null,

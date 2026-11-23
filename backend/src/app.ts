@@ -11,53 +11,35 @@ import routes from './routes';
 
 const app = express();
 
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
-app.use(express.json());
+app.set('trust proxy', env.TRUST_PROXY); // IP klien benar di belakang Nginx
+app.disable('x-powered-by');
+
+// Swagger UI memakai skrip inline, jadi dipasang sebelum helmet (CSP).
+if (env.ENABLE_SWAGGER) {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
+
+app.use(helmet());
+app.use(
+  cors({
+    origin: env.CORS_ORIGIN,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+    exposedHeaders: ['Content-Disposition'],
+  }),
+);
+app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
 app.use(sessionContext);
 
-// Health Check Endpoint (Public)
-app.get('/health', async (_req, res) => {
-  try {
-    const pool = await poolPromise;
-    await pool.request().query('SELECT 1 AS ok');
-
-    return sendSuccess(
-      res,
-      {
-        server: 'up',
-        database: 'connected',
-        timestamp: new Date().toISOString(),
-      },
-      'Sistem dan database berjalan normal',
-      200
-    );
-  } catch (err) {
-    console.error('[HEALTH CHECK ERROR]:', err);
-    return sendError(
-      res,
-      'Koneksi database terputus',
-      ERROR_CODES.SYSTEM_ERROR,
-      503
-    );
-  }
+// Liveness untuk Nginx / monitoring; tidak menyentuh database dan tidak membuka data apa pun.
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
 });
 
-// Swagger UI Placeholder di /api-docs (TSD 1.2)[cite: 3]
-// const swaggerDocument = {
-//   openapi: '3.0.0',
-//   info: { title: 'API Sistem Pencatatan Keuangan CV Sekar Melati', version: '1.0.0' },
-//   servers: [{ url: '/api/v1' }],
-// };
-// app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+app.use('/api/v1', routes);
 
-// Swagger UI di /api-docs (TSD 1.2)[cite: 3]
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-
-// Base API Route /api/v1[cite: 3]
-app.use('/api/v1', apiRoutes);
-
-// Global Error Handler
+app.use(notFoundHandler);
 app.use(errorHandler);
 
 export default app;
