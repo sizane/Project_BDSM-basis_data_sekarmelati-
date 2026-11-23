@@ -35,7 +35,16 @@ export interface PesananDetailData {
   pembayaran: PembayaranRow[];
 }
 
+/**
+ * =========================================================================
+ * [OOP: ABSTRAKSI & POLIMORFISME]
+ * Kontrak interface repository untuk operasi pengambilan data detail pesanan.
+ * Mendukung polimorfisme karena berbagai implementasi (SQL, InMemory/Mock)
+ * dapat saling menggantikan (interchangeable).
+ * =========================================================================
+ */
 export interface PesananDetailRepository {
+  // [OOP: ASYNCHRONOUS] - Method mengembalikan Promise<PesananDetailData>
   findDetail(pesananId: string): Promise<PesananDetailData>;
 }
 
@@ -45,8 +54,58 @@ type PesananDetailRecordsets = [
   PembayaranRow[] | undefined,
 ];
 
-export class SqlPesananDetailRepository implements PesananDetailRepository {
+/**
+ * =========================================================================
+ * [OOP: BASE CLASS & ENKAPSULASI]
+ * Superclass abstrak sebagai cetak biru untuk seluruh repository detail pesanan.
+ * =========================================================================
+ */
+export abstract class BasePesananRepository {
+  // [OOP: ENKAPSULASI] - Property protected hanya dapat diakses oleh class ini dan kelas turunannya
+  protected readonly dataSourceName: string;
+
+  constructor(dataSourceName: string) {
+    this.dataSourceName = dataSourceName;
+  }
+
+  // Method dasar yang dirancang untuk di-override oleh subclass
+  public logQuery(action: string, id: string): void {
+    // Default implementation: mencatat aksi repository
+  }
+
+  // [OOP: ASYNCHRONOUS & ABSTRAKSI] - Method abstrak yang wajib diimplementasikan oleh turunan
+  abstract findDetail(pesananId: string): Promise<PesananDetailData>;
+}
+
+/**
+ * =========================================================================
+ * [OOP: POLIMORFISME, INHERITANCE, OVERRIDING & ASYNC]
+ * Implementasi repository yang mengambil data langsung dari SQL Server.
+ * Meng-extend BasePesananRepository (Inheritance) dan mengimplementasikan
+ * PesananDetailRepository (Polimorfisme).
+ * =========================================================================
+ */
+export class SqlPesananDetailRepository
+  extends BasePesananRepository
+  implements PesananDetailRepository
+{
+  // [OOP: ENKAPSULASI] - State private terlindungi di dalam class
+  private readonly queryTimeoutMs: number = 15000;
+
+  constructor() {
+    super('SQL_SERVER_DATABASE');
+  }
+
+  // [OOP: OVERRIDING] - Menimpa method logQuery milik BasePesananRepository
+  override logQuery(action: string, id: string): void {
+    super.logQuery(action, id);
+    // Custom log behavior khusus SQL Server
+  }
+
+  // [OOP: ASYNCHRONOUS] - Implementasi async/await database query
   async findDetail(pesananId: string): Promise<PesananDetailData> {
+    this.logQuery('findDetail', pesananId);
+
     const result = await runQuery<PesananRow | ItemPesananRow | PembayaranRow>(
       `SELECT p.pesanan_id, p.no_pesanan, p.tanggal_masuk, p.tenggat, p.tanggal_lunas, p.harga_total,
               p.status_pesanan, p.created_at,
@@ -78,5 +137,45 @@ export class SqlPesananDetailRepository implements PesananDetailRepository {
       items: items ?? [],
       pembayaran: pembayaran ?? [],
     };
+  }
+}
+
+/**
+ * =========================================================================
+ * [OOP: POLIMORFISME]
+ * Implementasi in-memory repository (alternatif polimorfis untuk testing / caching)
+ * yang memiliki interface yang sama persis dengan SqlPesananDetailRepository.
+ * =========================================================================
+ */
+export class InMemoryPesananDetailRepository
+  extends BasePesananRepository
+  implements PesananDetailRepository
+{
+  // [OOP: ENKAPSULASI] - Koleksi data disimpan secara privat
+  private readonly storage: Map<string, PesananDetailData> = new Map();
+
+  constructor() {
+    super('IN_MEMORY_CACHE');
+  }
+
+  // [OOP: OVERRIDING] - Meng-override method logQuery
+  override logQuery(action: string, id: string): void {
+    // Custom log behavior in-memory
+  }
+
+  // [OOP: ASYNCHRONOUS]
+  async findDetail(pesananId: string): Promise<PesananDetailData> {
+    this.logQuery('findDetailInMemory', pesananId);
+    return (
+      this.storage.get(pesananId) ?? {
+        pesanan: null,
+        items: [],
+        pembayaran: [],
+      }
+    );
+  }
+
+  public seed(pesananId: string, data: PesananDetailData): void {
+    this.storage.set(pesananId, data);
   }
 }
